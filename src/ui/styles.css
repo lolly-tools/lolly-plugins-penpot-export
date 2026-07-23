@@ -1,0 +1,250 @@
+/* SPDX-License-Identifier: MPL-2.0
+   Panel styling roughly matching Penpot's plugin look: compact, quiet,
+   theme-driven via [data-theme] set from penpot.theme. */
+
+:root {
+  --bg: #ffffff;
+  --panel: #f3f4f6;
+  --text: #18191b;
+  --muted: #6b7280;
+  --border: #d9dbe1;
+  --accent: #7efff5;
+  --accent-text: #0d0f11;
+  --error: #c2554d;
+  --ok: #2e8b57;
+  font-size: 13px;
+}
+
+:root[data-theme='dark'] {
+  --bg: #18191b;
+  --panel: #212426;
+  --text: #e8e9ea;
+  --muted: #8f9aa3;
+  --border: #33383b;
+  --accent: #7efff5;
+  --accent-text: #0d0f11;
+  --error: #ff8a80;
+  --ok: #7bd88f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+.selection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.empty {
+  color: var(--muted);
+  margin: 24px 4px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.shape {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.shape.active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.shape-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shape-dims {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.section {
+  display: block;
+  margin: 12px 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.formats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.fmt {
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.fmt.active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.hint {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row input,
+.row select {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+}
+
+.row select {
+  flex: 0 0 auto;
+  width: 64px;
+}
+
+.row .x,
+.row .suffix {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: var(--accent);
+}
+
+.row.stack {
+  margin-top: 6px;
+}
+
+.dials {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dial {
+  display: grid;
+  grid-template-columns: 58px 1fr 38px;
+  align-items: center;
+  gap: 8px;
+}
+
+.dial-name {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dial input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.dial-val {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.export {
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: var(--accent-text);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.export:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.status {
+  margin: 10px 2px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.busy {
+  color: var(--muted);
+}
+
+.footnote {
+  margin: 18px 2px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.footnote a {
+  color: inherit;
+}

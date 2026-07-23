@@ -1,0 +1,20 @@
+{
+  "name": "lolly-penpot-plugins",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Penpot plugins powered by the Lolly engine — print PDF, EPS, EMF, DXF, outlined-text SVG and DPI-true raster export, all client-side.",
+  "license": "MPL-2.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && esbuild src/plugin.ts --bundle --format=iife --outfile=dist/plugin.js",
+    "preview": "npm run build && vite preview --port 4402",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@penpot/plugin-types": "^1.4.0",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.5.0",
+    "vite": "^8.0.13"
+  }
+}

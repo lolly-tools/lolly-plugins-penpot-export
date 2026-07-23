@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "Lolly Export",
+  "description": "Print-grade PDF, EPS, EMF, DXF, outlined-text SVG and DPI-true raster export for your boards — runs entirely in your browser, nothing is uploaded anywhere.",
+  "code": "plugin.js",
+  "icon": "icon.png",
+  "permissions": [
+    "content:read",
+    "allow:downloads"
+  ]
+}

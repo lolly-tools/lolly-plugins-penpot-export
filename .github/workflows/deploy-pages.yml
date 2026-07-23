@@ -1,0 +1,76 @@
+# Build the plugin and publish dist/ to GitHub Pages.
+#
+# The bundle imports the Lolly engine + web-shell bridge modules from a SIBLING
+# checkout (see vite.config.ts), so the job clones the public lolly repo next
+# to this one and installs both before building. GitHub Pages serves with
+# `Access-Control-Allow-Origin: *`, which is what Penpot's plugin loader needs;
+# users install from:
+#   https://lolly-tools.github.io/lolly-plugins-penpot-export/manifest.json
+#
+# One-time repo setting: Settings → Pages → Source: "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lolly-plugins-penpot-export
+
+      # Sibling lolly checkout. brands/suse is `update = none` in .gitmodules,
+      # so the private pack is skipped and the build falls back to the public
+      # lolly-start profile — same as any public clone.
+      - uses: actions/checkout@v4
+        with:
+          repository: lolly-tools/lolly
+          path: lolly
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install lolly workspace (engine + bridge deps)
+        working-directory: lolly
+        run: npm install
+
+      - name: Install plugin deps
+        working-directory: lolly-plugins-penpot-export
+        run: npm install
+
+      - name: Typecheck
+        working-directory: lolly-plugins-penpot-export
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: lolly-plugins-penpot-export
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: lolly-plugins-penpot-export/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

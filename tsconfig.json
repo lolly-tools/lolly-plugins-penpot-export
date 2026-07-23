@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "types": ["@penpot/plugin-types"],
+    "paths": {
+      "@lolly/engine": ["../lolly/engine/src/index.ts"],
+      "@engine/*": ["../lolly/engine/src/*"],
+      "@bridge/*": ["../lolly/shells/web/src/bridge/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}
