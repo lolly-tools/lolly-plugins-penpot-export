@@ -70,7 +70,6 @@ npm install
 npm run build        # dist/ = UI bundle + plugin.js + manifest.json
 npm run preview      # serves dist/ at http://localhost:4402 with CORS
 npm run typecheck
-node scripts/make-icon.mjs   # regenerate public/icon.png
 ```
 
 ### Trying it in Penpot
