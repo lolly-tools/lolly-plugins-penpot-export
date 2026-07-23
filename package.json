@@ -11,6 +11,11 @@
     "preview": "npm run build && vite preview --port 4402",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "harfbuzzjs": "^1.4.0",
+    "idb": "^8.0.0",
+    "woff2-encoder": "^2.0.0"
+  },
   "devDependencies": {
     "@penpot/plugin-types": "^1.4.0",
     "esbuild": "^0.27.0",

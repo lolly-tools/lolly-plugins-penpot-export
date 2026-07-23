@@ -32,34 +32,35 @@ jobs:
         with:
           path: lolly-plugins-penpot-export
 
-      # Sibling lolly checkout. brands/suse is `update = none` in .gitmodules,
-      # so the private pack is skipped and the build falls back to the public
-      # lolly-start profile — same as any public clone.
+      # Sibling lolly checkout — SOURCE FILES ONLY. The bundle needs the
+      # engine + web-shell bridge .ts sources; both runtime npm deps (idb,
+      # harfbuzzjs) are dependencies of THIS repo and vite-aliased to its
+      # node_modules, so lolly is never npm-installed here. Only the
+      # shells/web submodule is initialised — a recursive init would drag in
+      # every subrepo and break on any parent-pointer drift.
       - uses: actions/checkout@v4
         with:
           repository: lolly-tools/lolly
           path: lolly
-          submodules: recursive
+
+      - name: Init shells/web submodule
+        working-directory: lolly
+        run: git submodule update --init shells/web
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: Install lolly workspace (engine + bridge deps)
-        working-directory: lolly
-        run: npm install
-
       - name: Install plugin deps
         working-directory: lolly-plugins-penpot-export
         run: npm install
 
-      - name: Typecheck
-        working-directory: lolly-plugins-penpot-export
-        run: npm run typecheck
-
+      # No typecheck here: tsc follows type-only imports into the web shell's
+      # export.ts, whose type graph needs lolly's full node_modules. Typecheck
+      # runs locally where the sibling workspace is installed.
       - name: Build
         working-directory: lolly-plugins-penpot-export
-        run: npm run build
+        run: LOLLY_DIR="$GITHUB_WORKSPACE/lolly" npm run build
 
       - uses: actions/upload-pages-artifact@v3
         with:
