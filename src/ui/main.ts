@@ -83,7 +83,7 @@ interface FormatDef {
 }
 
 const FORMATS: FormatDef[] = [
-  { id: 'pdf', label: 'Print PDF', hint: 'Physical size, bleed, crop marks, PDF/X-4' },
+  { id: 'pdf', label: 'Print PDF', hint: 'CMYK, physical size, bleed, crop marks, PDF/X-4' },
   { id: 'pdf-screen', label: 'Screen PDF', hint: 'RGB, page = artwork — for sharing' },
   { id: 'svg', label: 'SVG', hint: 'Penpot vectors with the fonts embedded' },
   { id: 'eps', label: 'EPS', hint: 'PostScript for print + legacy tools' },
@@ -126,8 +126,9 @@ interface FormState {
   registration: boolean;
   colorBars: boolean;
   pdfx: boolean;
-  // colour management (pdf/eps/tiff)
-  colorMode: ColorMode;
+  // colour management (pdf/eps/tiff) — the mode is remembered per format, so
+  // choosing RGB for an EPS doesn't quietly change what a Print PDF exports.
+  colorModes: Partial<Record<OutputFormat, ColorMode>>;
   condition: string;
   /** Uploaded destination ICC — press profiles can't ship with the plugin. */
   destProfile: Uint8Array | null;
@@ -156,7 +157,7 @@ const form: FormState = {
   registration: false,
   colorBars: false,
   pdfx: false,
-  colorMode: 'rgb',
+  colorModes: {},
   condition: DEFAULT_CONDITION,
   destProfile: null,
   destProfileName: '',
@@ -190,6 +191,24 @@ function updateLock(hex: string, patch: Partial<InkLock>): void {
   // Drop rows the user has cleared, so the store doesn't fill with empty hexes.
   inkLocks = inkLocks.filter(isLocked);
   saveInkLocks(inkLocks);
+}
+
+/**
+ * Where each format starts. Print PDF is a press deliverable, so it opens in
+ * CMYK — an RGB default quietly hands a printer the wrong file, and the failure
+ * only shows up on press. CMYK TIFF is CMYK by definition. EPS stays RGB: it's
+ * as often a vector interchange format as a press one, and its CMYK mode is one
+ * click away. Screen PDF never shows the control at all.
+ */
+const DEFAULT_COLOR_MODE: Partial<Record<OutputFormat, ColorMode>> = {
+  pdf: 'cmyk',
+  tiff: 'cmyk',
+  eps: 'rgb',
+};
+
+/** The colour mode in force for the selected format. */
+function colorMode(): ColorMode {
+  return form.colorModes[form.format] ?? DEFAULT_COLOR_MODE[form.format] ?? 'rgb';
 }
 
 let statusText = '';
@@ -333,15 +352,15 @@ function render(): void {
   if (form.format === 'pdf' || form.format === 'eps' || form.format === 'tiff') {
     // CMYK TIFF is CMYK by definition; the others are a choice.
     const forcedCmyk = form.format === 'tiff';
-    if (forcedCmyk) form.colorMode = 'cmyk';
+    const mode = colorMode();
 
     app.append(el('label', { class: 'section' }, 'Colour'));
     if (!forcedCmyk) {
       const modes = el('div', { class: 'formats' });
       for (const [id, label] of [['rgb', 'RGB'], ['cmyk', 'CMYK'] as const] as [ColorMode, string][]) {
-        const btn = el('button', { class: `fmt${form.colorMode === id ? ' active' : ''}`, type: 'button' }, label);
+        const btn = el('button', { class: `fmt${mode === id ? ' active' : ''}`, type: 'button' }, label);
         btn.addEventListener('click', () => {
-          form.colorMode = id;
+          form.colorModes[form.format] = id;
           render();
         });
         modes.append(btn);
@@ -349,7 +368,7 @@ function render(): void {
       app.append(modes);
     }
 
-    if (form.colorMode === 'cmyk') {
+    if (mode === 'cmyk') {
       const condSel = el('select') as HTMLSelectElement;
       for (const c of PRESS_CONDITIONS) {
         condSel.append(el('option', c.id === form.condition ? { value: c.id, selected: '' } : { value: c.id }, c.label));
@@ -549,7 +568,7 @@ async function doExport(): Promise<void> {
         pdfx: form.pdfx,
       },
       color: {
-        mode: form.colorMode,
+        mode: colorMode(),
         condition: form.condition,
         inkLocks,
         destProfile: form.destProfile,
