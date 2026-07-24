@@ -193,9 +193,55 @@ body {
   font-size: 11px;
 }
 
+/*
+ * The dials are drawn rather than left native. A default range input is 16px
+ * tall with a ~12px thumb, and these rows sit 6px apart — so the target is
+ * small, and a grab that lands a couple of pixels high or low hits nothing at
+ * all. 20px of height around a 4px track is all hit area, and a 16px thumb is
+ * something you can actually aim at.
+ */
 .dial input[type='range'] {
   width: 100%;
-  accent-color: var(--accent);
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+.dial input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.dial input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.dial input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dial input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dial input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .dial-val {

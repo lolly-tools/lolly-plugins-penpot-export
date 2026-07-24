@@ -465,8 +465,11 @@ function render(): void {
     app.append(el('label', { class: 'section' }, 'HDR'), hdrBox);
     if (form.hdr) {
       const dials = el('div', { class: 'dials' });
-      const dial = (key: 'hdrPeak' | 'hdrReach' | 'hdrLift' | 'hdrFocus', label: string, min: string, max: string): void => {
-        const input = el('input', { type: 'range', min, max, value: form[key] }) as HTMLInputElement;
+      // `step` matters most on White: 400–2000 nits across a ~224px track is
+      // seven units per pixel at step 1, so the value jitters with the mouse and
+      // never lands on a round number. Stepping in 25s makes it aimable.
+      const dial = (key: 'hdrPeak' | 'hdrReach' | 'hdrLift' | 'hdrFocus', label: string, min: string, max: string, step = '1'): void => {
+        const input = el('input', { type: 'range', min, max, step, value: form[key] }) as HTMLInputElement;
         const val = el('span', { class: 'dial-val' }, form[key]);
         input.addEventListener('input', () => {
           form[key] = input.value;
@@ -474,7 +477,7 @@ function render(): void {
         });
         dials.append(el('label', { class: 'dial' }, el('span', { class: 'dial-name' }, label), input, val));
       };
-      dial('hdrPeak', 'White', '400', '2000');
+      dial('hdrPeak', 'White', '400', '2000', '25');
       dial('hdrReach', 'Reach', '0', '100');
       dial('hdrLift', 'Dark lift', '0', '100');
       dial('hdrFocus', 'Focus', '0', '100');
