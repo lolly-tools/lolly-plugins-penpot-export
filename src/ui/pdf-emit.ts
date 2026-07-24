@@ -26,7 +26,9 @@ import {
 } from '@engine/print-marks.ts';
 import { buildPdfXXmp, makeDocumentId, pdfxOutputIntentSpec } from '@engine/pdfx.ts';
 import { parseDimension, toPoints, CSS_DPI } from '@engine/units.ts';
+import { srgbIccProfile, rgbToCmyk } from '@engine/color.ts';
 import { deflateBytes } from '@bridge/export-image-meta.ts';
+import { Separator, REGISTRATION, BLACK_ONLY, DEFAULT_CONDITION, type Cmyk4, type ColorMode, type InkLock } from './cmyk.ts';
 
 export interface PrintPdfOpts extends VectorEmitOpts {
   /** Bleed as a dimension string ('3mm') or points; 0/undefined = none. */
@@ -37,6 +39,22 @@ export interface PrintPdfOpts extends VectorEmitOpts {
   /** Claim PDF/X-4 (skips the Helvetica provenance label). */
   pdfx?: boolean;
   title?: string;
+  /** 'cmyk' emits DeviceCMYK/Separation ink operators instead of DeviceRGB. */
+  color?: ColorMode;
+  /** Press condition declared in the CMYK OutputIntent (see cmyk.ts). */
+  condition?: string;
+  /** Measured brand ink values that override the device conversion. */
+  inkLocks?: InkLock[];
+  /**
+   * A destination ICC profile for the CMYK OutputIntent. Without one the intent
+   * is registry-name-only, which is NOT strictly PDF/X-4 conformant — so the
+   * conformance claim is dropped rather than faked. Press profiles (FOGRA,
+   * GRACoL) aren't freely redistributable, hence the upload rather than a
+   * bundled asset.
+   */
+  destProfile?: Uint8Array | null;
+  /** Collects honesty notes (dropped X-4 claim, etc.) for the UI. */
+  warn?: (message: string) => void;
 }
 
 // Circle → 4 cubic Béziers.
@@ -153,14 +171,48 @@ function artFit(geo: PrintGeometry, ir: VectorIr): ArtFit {
   };
 }
 
-function pathOps(prim: Extract<VectorIr['prims'][number], { type: 'path' }>, fit: ArtFit, flip: (y: number) => number): string {
+// ─── colour operators ────────────────────────────────────────────────────────
+//
+// One place decides RGB vs ink for every primitive. `fill` writes the
+// non-stroking operator (rg / k / scn), `stroke` the stroking one (RG / K /
+// SCN) — PDF keeps the two colour slots entirely separate.
+
+/** A DeviceCMYK ink operator from resolved 0–1 values. */
+const inkOp = (c: Cmyk4, stroking: boolean): string =>
+  `${n(c[0])} ${n(c[1])} ${n(c[2])} ${n(c[3])} ${stroking ? 'K' : 'k'}\n`;
+
+/** Paint an 8-bit RGB triple in whichever space this export is emitting. */
+function colorOp(sep: Separator, r: number, g: number, b: number, stroking: boolean): string {
+  if (!sep.cmyk) {
+    const op = stroking ? 'RG' : 'rg';
+    return `${n(r / 255)} ${n(g / 255)} ${n(b / 255)} ${op}\n`;
+  }
+  const ink = sep.resolve(r / 255, g / 255, b / 255);
+  if (ink.spot) {
+    // A spot plate is its own colourspace painted at full tint. The /CSn name is
+    // assigned up front so it can be written here, before the colourspace object
+    // exists — emitPrintPdf materialises only the ones this stream referenced.
+    const cs = sep.spotResource(ink.spot)!;
+    return stroking ? `/${cs} CS 1 SCN\n` : `/${cs} cs 1 scn\n`;
+  }
+  return inkOp(ink.cmyk, stroking);
+}
+
+/** Paint an already-resolved ink, or its RGB stand-in outside CMYK mode. */
+function markColorOp(sep: Separator, ink: Cmyk4, rgb: [number, number, number], stroking: boolean): string {
+  if (sep.cmyk) return inkOp(ink, stroking);
+  const op = stroking ? 'RG' : 'rg';
+  return `${n(rgb[0])} ${n(rgb[1])} ${n(rgb[2])} ${op}\n`;
+}
+
+function pathOps(prim: Extract<VectorIr['prims'][number], { type: 'path' }>, fit: ArtFit, flip: (y: number) => number, sep: Separator): string {
   const { s, ox, oy } = fit;
   const tx = (x: number): number => ox + x * s;
   const ty = (y: number): number => flip(oy + y * s);
   let ops = '';
-  if (prim.fill) ops += `${n(prim.fill.r / 255)} ${n(prim.fill.g / 255)} ${n(prim.fill.b / 255)} rg\n`;
+  if (prim.fill) ops += colorOp(sep, prim.fill.r, prim.fill.g, prim.fill.b, false);
   if (prim.stroke) {
-    ops += `${n(prim.stroke.r / 255)} ${n(prim.stroke.g / 255)} ${n(prim.stroke.b / 255)} RG\n`;
+    ops += colorOp(sep, prim.stroke.r, prim.stroke.g, prim.stroke.b, true);
     ops += `${n(Math.max(prim.stroke.width * s, 0.1))} w\n`;
   }
   for (const sub of prim.subpaths) {
@@ -179,19 +231,26 @@ function pathOps(prim: Extract<VectorIr['prims'][number], { type: 'path' }>, fit
   return ops;
 }
 
-function markOps(geo: PrintGeometry, flip: (y: number) => number, withLabels: boolean): string {
+function markOps(geo: PrintGeometry, flip: (y: number) => number, withLabels: boolean, sep: Separator): string {
   let ops = '';
   const sw = n(geo.strokeWeight);
-  // Line marks + registration circles draw in plain black — the RGB stand-in
-  // for the all-inks registration colour.
+  // Crop, bleed and registration marks print in registration ink — all four
+  // plates at full strength, so every separation carries them and the pressman
+  // can align them. In RGB mode that's only expressible as black, which is the
+  // stand-in this format has always used.
+  const regOp = markColorOp(sep, REGISTRATION, [0, 0, 0], true);
+  // Rules and provenance text stay K-only: a hairline that prints 4-colour is a
+  // registration problem, not a feature.
+  const kOp = markColorOp(sep, BLACK_ONLY, [0, 0, 0], true);
+  const kFill = markColorOp(sep, BLACK_ONLY, [0, 0, 0], false);
   for (const line of geo.primitives.lines) {
-    ops += `0 0 0 RG ${sw} w\n${n(line.x1)} ${n(flip(line.y1))} m ${n(line.x2)} ${n(flip(line.y2))} l S\n`;
+    ops += `${regOp}${sw} w\n${n(line.x1)} ${n(flip(line.y1))} m ${n(line.x2)} ${n(flip(line.y2))} l S\n`;
   }
   for (const c of geo.primitives.circles) {
     const { cx, r } = c;
     const cy = flip(c.cy);
     const k = r * KAPPA;
-    ops += `0 0 0 RG ${sw} w\n`;
+    ops += `${regOp}${sw} w\n`;
     ops += `${n(cx + r)} ${n(cy)} m\n`;
     ops += `${n(cx + r)} ${n(cy + k)} ${n(cx + k)} ${n(cy + r)} ${n(cx)} ${n(cy + r)} c\n`;
     ops += `${n(cx - k)} ${n(cy + r)} ${n(cx - r)} ${n(cy + k)} ${n(cx - r)} ${n(cy)} c\n`;
@@ -203,10 +262,16 @@ function markOps(geo: PrintGeometry, flip: (y: number) => number, withLabels: bo
     ops += `${n(cx)} ${n(cy - cr)} m ${n(cx)} ${n(cy + cr)} l S\n`;
   }
   for (const cell of geo.primitives.bars) {
-    const [r, g, b] = cell.rgb; // RgbTriple here is 0–1 (cmykToRgbApprox), not 0–255
-    ops += `${n(r)} ${n(g)} ${n(b)} rg\n`;
+    // RgbTriple here is 0–1 (cmykToRgbApprox for the ink cells), not 0–255.
+    const [r, g, b] = cell.rgb;
+    // In CMYK the bar becomes a real verification strip: the 'rgb' half of each
+    // pair shows what the naïve device conversion of the screen colour produces,
+    // the 'cmyk' half the locked ink. Side by side on press, that's exactly the
+    // comparison a printer wants to eyeball.
+    const ink: Cmyk4 = cell.ink === 'rgb' ? rgbToCmyk(r, g, b) : (cell.cmyk as Cmyk4);
+    ops += markColorOp(sep, ink, [r, g, b], false);
     ops += `${n(cell.x)} ${n(flip(cell.y + cell.h))} ${n(cell.w)} ${n(cell.h)} re f\n`;
-    ops += `0 0 0 RG ${sw} w ${n(cell.x)} ${n(flip(cell.y + cell.h))} ${n(cell.w)} ${n(cell.h)} re S\n`;
+    ops += `${kOp}${sw} w ${n(cell.x)} ${n(flip(cell.y + cell.h))} ${n(cell.w)} ${n(cell.h)} re S\n`;
   }
   if (withLabels) {
     for (const label of geo.primitives.labels) {
@@ -217,7 +282,7 @@ function markOps(geo: PrintGeometry, flip: (y: number) => number, withLabels: bo
       const cosr = n(Math.cos((rot * Math.PI) / 180));
       const sinr = n(Math.sin((-rot * Math.PI) / 180));
       const nsinr = n(-Math.sin((-rot * Math.PI) / 180));
-      ops += `BT /F1 ${n(label.size)} Tf 0 0 0 rg ${cosr} ${sinr} ${nsinr} ${cosr} ${x} ${y} Tm (${esc(text)}) Tj ET\n`;
+      ops += `BT /F1 ${n(label.size)} Tf ${kFill}${cosr} ${sinr} ${nsinr} ${cosr} ${x} ${y} Tm (${esc(text)}) Tj ET\n`;
     }
   }
   return ops;
@@ -256,21 +321,38 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
   const pageH = geo.page.h;
   const flip = (y: number): number => pageH - y;
   const withLabels = Boolean(marks.provenance) && !opts.pdfx;
+  const sep = new Separator(opts.color ?? 'rgb', opts.inkLocks ?? []);
 
   const w = new PdfWriter();
   w.push('%PDF-1.6\n%\xE2\xE3\xCF\xD3\n');
 
+  // The engine-generated sRGB profile, written once and shared by every
+  // /ICCBased image colourspace and (in RGB mode) the OutputIntent.
+  let srgbId = 0;
+  const srgbIcc = async (): Promise<number> => {
+    if (!srgbId) srgbId = w.streamObj('/N 3 /Filter /FlateDecode', await deflateBytes(srgbIccProfile()));
+    return srgbId;
+  };
+
   // ── image XObjects (flate-compressed raw RGB) ──────────────────────────────
+  //
+  // Pixels stay sRGB in both colour modes — rasters are late-binding and a RIP
+  // separates them far better than a per-pixel device conversion here would. The
+  // colourspace is /ICCBased rather than /DeviceRGB because PDF/X-4 forbids
+  // device-dependent colour, and under a CMYK OutputIntent a /DeviceRGB image is
+  // flatly illegal. /ICCBased is device-independent, so it's valid under either
+  // intent and the file stays conformant.
   const images = ir.prims.filter((p): p is Extract<typeof p, { type: 'image' }> => p.type === 'image');
   const imageIds = new Map<number, number>(); // prim index → object id
   {
+    const iccRef = images.length ? await srgbIcc() : 0;
     let idx = 0;
     for (const prim of ir.prims) {
       if (prim.type === 'image') {
         const compressed = await deflateBytes(prim.rgb);
         const id = w.streamObj(
           `/Type /XObject /Subtype /Image /Width ${prim.pxW} /Height ${prim.pxH} ` +
-            `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode`,
+            `/ColorSpace [/ICCBased ${iccRef} 0 R] /BitsPerComponent 8 /Filter /FlateDecode`,
           compressed,
         );
         imageIds.set(idx, id);
@@ -286,7 +368,7 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
     let imgN = 0;
     for (const prim of ir.prims) {
       if (prim.type === 'path') {
-        content += pathOps(prim, fit, flip);
+        content += pathOps(prim, fit, flip, sep);
       } else {
         const x = fit.ox + prim.x * fit.s;
         const yTop = fit.oy + prim.y * fit.s;
@@ -297,9 +379,30 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
       }
     }
     continueBrandPairs(geo, opts.palette ?? [], Boolean(marks.registration), pageW);
-    content += markOps(geo, flip, withLabels);
+    content += markOps(geo, flip, withLabels, sep);
   }
   const contentId = w.streamObj('/Filter /FlateDecode', await deflateBytes(latin1(content)));
+
+  // ── spot colourspaces ──────────────────────────────────────────────────────
+  //
+  // One /Separation per spot plate the content stream actually referenced, each
+  // with a Type-2 exponential tint transform: a linear ramp from no ink at tint 0
+  // to the spot's process equivalent at tint 1. That's the standard "named ink
+  // with a process alternate" construction — a RIP with the real ink prints the
+  // plate, anything else falls back to the CMYK build.
+  let colorspaces = '';
+  for (const spotName of sep.usedSpots) {
+    const resourceName = sep.spotResource(spotName);
+    const alt = sep.spotCmyk(spotName);
+    if (!resourceName || !alt) continue;
+    const fnId = w.beginObj();
+    w.push(`<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [${alt.map(n).join(' ')}] /N 1 >>`);
+    w.endObj();
+    const csId = w.beginObj();
+    w.push(`[/Separation (${esc(spotName)}) /DeviceCMYK ${fnId} 0 R]`);
+    w.endObj();
+    colorspaces += `/${resourceName} ${csId} 0 R `;
+  }
 
   // ── resources ──────────────────────────────────────────────────────────────
   let xobjects = '';
@@ -322,12 +425,50 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
   w.push(
     `<< /ProcSet [/PDF${images.length ? ' /ImageC' : ''}${withLabels ? ' /Text' : ''}]` +
       (xobjects ? ` /XObject << ${xobjects}>>` : '') +
+      (colorspaces ? ` /ColorSpace << ${colorspaces}>>` : '') +
       (withLabels ? ` /Font << /F1 ${fontId} 0 R >>` : '') +
       ' >>',
   );
   w.endObj();
 
-  // ── metadata (XMP) + OutputIntent ──────────────────────────────────────────
+  // ── OutputIntent ───────────────────────────────────────────────────────────
+  //
+  // The intent tells a RIP what the numbers in this file mean. RGB embeds the
+  // engine's sRGB profile and is fully conformant. CMYK names the press
+  // condition, and embeds a destination profile only if the caller supplied one
+  // — press profiles can't ship with the plugin for licensing reasons.
+  const intent = pdfxOutputIntentSpec(sep.cmyk ? (opts.condition ?? DEFAULT_CONDITION) : 'srgb');
+  const destBytes = sep.cmyk ? (opts.destProfile ?? null) : intent.iccBytes;
+
+  let destRef = '';
+  if (destBytes) {
+    const iccId = sep.cmyk
+      ? w.streamObj(`/N ${intent.components} /Filter /FlateDecode`, await deflateBytes(destBytes))
+      : await srgbIcc(); // identical bytes to the image colourspace — share the object
+    destRef = ` /DestOutputProfile ${iccId} 0 R`;
+  }
+  const intentId = w.beginObj();
+  w.push(
+    `<< /Type /OutputIntent /S /${intent.subtype} ` +
+      `/OutputConditionIdentifier (${esc(intent.identifier)}) ` +
+      `/Info (${esc(intent.info)}) /RegistryName (${esc(intent.registry)})${destRef} >>`,
+  );
+  w.endObj();
+  const intentRef = ` /OutputIntents [${intentId} 0 R]`;
+
+  // ── metadata (XMP) ─────────────────────────────────────────────────────────
+  //
+  // Honesty gate: PDF/X-4 requires an EMBEDDED destination profile. A CMYK export
+  // with only a registry name is "X-4 ready", not conformant — so the claim is
+  // dropped rather than faked, and the caller is told why. Every other X-4
+  // requirement is already met (all text is outlined, no device colour remains).
+  const claimPdfx = Boolean(opts.pdfx) && Boolean(destBytes);
+  if (opts.pdfx && !claimPdfx) {
+    opts.warn?.(
+      'PDF/X-4 not claimed: a CMYK output intent needs an embedded destination profile. ' +
+        'Add your press ICC profile, or ask your printer which condition to use.',
+    );
+  }
   const documentId = makeDocumentId();
   const nowIso = new Date().toISOString();
   const xmp = buildPdfXXmp({
@@ -337,27 +478,9 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
     producer: 'Lolly engine',
     documentId,
     instanceId: makeDocumentId(),
-    ...(opts.pdfx ? {} : { pdfxVersion: '' }),
+    ...(claimPdfx ? {} : { pdfxVersion: '' }),
   });
   const metadataId = w.streamObj('/Type /Metadata /Subtype /XML', latin1(xmp));
-
-  const intent = pdfxOutputIntentSpec('srgb');
-  let intentRef = '';
-  if (intent.iccBytes) {
-    const iccId = w.streamObj(
-      `/N ${intent.components} /Filter /FlateDecode`,
-      await deflateBytes(intent.iccBytes),
-    );
-    const intentId = w.beginObj();
-    w.push(
-      `<< /Type /OutputIntent /S /${intent.subtype} ` +
-        `/OutputConditionIdentifier (${esc(intent.identifier)}) ` +
-        `/Info (${esc(intent.info)}) /RegistryName (${esc(intent.registry)}) ` +
-        `/DestOutputProfile ${iccId} 0 R >>`,
-    );
-    w.endObj();
-    intentRef = ` /OutputIntents [${intentId} 0 R]`;
-  }
 
   // ── page tree, catalog, info ───────────────────────────────────────────────
   const box = (b: { x: number; y: number; w: number; h: number }): string =>

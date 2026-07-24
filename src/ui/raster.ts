@@ -59,16 +59,19 @@ function targetPixels(irW: number, irH: number, opts: VectorEmitOpts): { w: numb
   return { w: Math.round(w?.value ?? irW), h: Math.round(h?.value ?? irH) };
 }
 
-export async function rasterizeSvg(
+/**
+ * Rasterise the SVG to an offscreen canvas at the requested physical size.
+ * Shared by the screen-raster path below and the CMYK TIFF emitter, which needs
+ * the pixels rather than an encoded file. `background` fills the sheet first —
+ * required for any format without an alpha channel (JPEG, CMYK TIFF).
+ */
+export async function svgToCanvas(
   svgText: string,
   irW: number,
   irH: number,
-  format: RasterFormat,
   opts: VectorEmitOpts = {},
-  hdr?: HdrOpts,
-  imprint?: boolean,
-): Promise<{ bytes: Uint8Array; warnings: string[] }> {
-  const warnings: string[] = [];
+  background?: string,
+): Promise<HTMLCanvasElement> {
   const { w, h } = targetPixels(irW, irH, opts);
   const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
   try {
@@ -82,11 +85,32 @@ export async function rasterizeSvg(
     canvas.height = h;
     const cx = canvas.getContext('2d', { willReadFrequently: true });
     if (!cx) throw new Error('Canvas 2D unavailable');
-    if (format === 'jpeg') {
-      cx.fillStyle = '#ffffff';
+    if (background) {
+      cx.fillStyle = background;
       cx.fillRect(0, 0, w, h);
     }
     cx.drawImage(img, 0, 0, w, h);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function rasterizeSvg(
+  svgText: string,
+  irW: number,
+  irH: number,
+  format: RasterFormat,
+  opts: VectorEmitOpts = {},
+  hdr?: HdrOpts,
+  imprint?: boolean,
+): Promise<{ bytes: Uint8Array; warnings: string[] }> {
+  const warnings: string[] = [];
+  {
+    const canvas = await svgToCanvas(svgText, irW, irH, opts, format === 'jpeg' ? '#ffffff' : undefined);
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = canvas.getContext('2d', { willReadFrequently: true })!;
 
     const hdrOn = Boolean(hdr?.enabled) && format !== 'webp';
     if (hdrOn || imprint) {
@@ -125,7 +149,5 @@ export async function rasterizeSvg(
       if (hdrOn) bytes = insertJpegIcc(bytes, pqBt2020IccProfile());
     }
     return { bytes, warnings };
-  } finally {
-    URL.revokeObjectURL(url);
   }
 }

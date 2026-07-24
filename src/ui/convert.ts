@@ -20,8 +20,10 @@ import { parseDimension, toCssLength } from '@engine/units.ts';
 import { rgbToCmyk } from '@engine/color.ts';
 import type { PaletteSwatch } from '@engine/print-marks.ts';
 import { emitPrintPdf, type PrintPdfOpts } from './pdf-emit.ts';
+import { emitCmykTiff } from './tiff-emit.ts';
 import { rasterizeSvg, type RasterFormat, type HdrOpts } from './raster.ts';
 import { applyProtection, extractSvgPalette, type ProtectOpts } from './protect.ts';
+import { Separator, type ColorMode, type Cmyk4, type InkLock } from './cmyk.ts';
 
 export type OutputFormat =
   | 'pdf'
@@ -30,7 +32,19 @@ export type OutputFormat =
   | 'eps'
   | 'emf'
   | 'dxf'
+  | 'tiff'
   | RasterFormat; // 'png' | 'jpeg' | 'webp'
+
+/** Colour-management settings shared by the print formats (pdf/eps/tiff). */
+export interface ColorOpts {
+  mode: ColorMode;
+  /** Press condition declared in the CMYK output intent. */
+  condition?: string;
+  /** Measured brand ink values that override the device conversion. */
+  inkLocks?: InkLock[];
+  /** Destination ICC profile for a strictly conformant PDF/X-4 intent. */
+  destProfile?: Uint8Array | null;
+}
 
 export interface ConvertOpts {
   format: OutputFormat;
@@ -47,17 +61,33 @@ export interface ConvertOpts {
   protect?: ProtectOpts;
   /** HDR PQ boost for png/jpeg. */
   hdr?: Omit<HdrOpts, 'targets'>;
+  /** Colour mode + ink locks for pdf/eps/tiff. */
+  color?: ColorOpts;
   title?: string;
 }
 
-/** Frame colours → PaletteSwatch[] for the print colour bars (rgb + cmyk 0–1). */
-function paletteSwatches(hexes: string[]): PaletteSwatch[] {
+/**
+ * Frame colours → PaletteSwatch[] for the print colour bars (rgb + cmyk 0–1).
+ * A colour with a measured ink lock contributes its real values, so the bar's
+ * verification pair compares the naïve device conversion against what will
+ * actually print rather than against another guess.
+ */
+function paletteSwatches(hexes: string[], locks: readonly InkLock[]): PaletteSwatch[] {
+  const byHex = new Map(locks.map((l) => [(l.hex ?? '').toLowerCase(), l]));
   return hexes.map((hex) => {
     const n = parseInt(hex.slice(1), 16);
     const r = ((n >> 16) & 255) / 255;
     const g = ((n >> 8) & 255) / 255;
     const b = (n & 255) / 255;
-    return { rgb: [r, g, b] as [number, number, number], cmyk: rgbToCmyk(r, g, b), label: hex };
+    const lock = byHex.get(hex.toLowerCase());
+    const cmyk: Cmyk4 =
+      lock?.cmyk?.length === 4 ? (lock.cmyk.map((v) => v / 100) as Cmyk4) : rgbToCmyk(r, g, b);
+    return {
+      rgb: [r, g, b] as [number, number, number],
+      cmyk,
+      label: hex,
+      ...(lock?.spot?.name ? { spotName: lock.spot.name } : {}),
+    };
   });
 }
 
@@ -245,12 +275,35 @@ async function render(svgText: string, opts: ConvertOpts, emitOpts: VectorEmitOp
     return { bytes, warnings, ...RASTER_META[opts.format] };
   }
 
+  // CMYK TIFF is a raster, but a print one: it takes the colour pipeline rather
+  // than the screen-raster path above.
+  if (opts.format === 'tiff') {
+    const css = await inlineFontCss(opts.fontCss ?? '');
+    const withFonts = injectSvgStyle(svgText, css);
+    const { w: irW, h: irH } = svgPxSize(svgText);
+    const locks = opts.color?.inkLocks ?? [];
+    const sep = new Separator(opts.color?.mode ?? 'cmyk', locks);
+    const { bytes, warnings } = await emitCmykTiff(withFonts, irW, irH, emitOpts, sep, {
+      condition: opts.color?.condition,
+      title: opts.title,
+    });
+    return { bytes, mime: 'image/tiff', ext: 'tif', warnings };
+  }
+
   const label = opts.format === 'pdf-screen' ? 'PDF' : opts.format.toUpperCase();
   const { ir, warnings } = await svgToIr(svgText, label);
+  const locks = opts.color?.inkLocks ?? [];
 
   switch (opts.format) {
     case 'eps': {
-      const text = emitEps(ir, emitOpts);
+      // The engine's EPS emitter already speaks setcmykcolor and takes a brand
+      // palette keyed exactly like ours — one map serves PDF, EPS and TIFF.
+      const sep = new Separator(opts.color?.mode ?? 'rgb', locks);
+      const text = emitEps(ir, {
+        ...emitOpts,
+        cmyk: sep.cmyk,
+        ...(sep.cmyk ? { cmykPalette: sep.paletteMap } : {}),
+      });
       return { bytes: new TextEncoder().encode(text), mime: 'application/postscript', ext: 'eps', warnings };
     }
     case 'dxf': {
@@ -264,8 +317,18 @@ async function render(svgText: string, opts: ConvertOpts, emitOpts: VectorEmitOp
     }
     case 'pdf': {
       // Frame colours ride into the colour bars as brand swatch pairs.
-      const palette = paletteSwatches(extractSvgPalette(svgText));
-      const bytes = await emitPrintPdf(ir, { ...(opts.pdf ?? {}), palette, title: opts.title, ...emitOpts });
+      const palette = paletteSwatches(extractSvgPalette(svgText), locks);
+      const bytes = await emitPrintPdf(ir, {
+        ...(opts.pdf ?? {}),
+        palette,
+        title: opts.title,
+        color: opts.color?.mode ?? 'rgb',
+        condition: opts.color?.condition,
+        inkLocks: locks,
+        destProfile: opts.color?.destProfile ?? null,
+        warn: (m) => warnings.push(m),
+        ...emitOpts,
+      });
       return { bytes, mime: 'application/pdf', ext: 'pdf', warnings };
     }
     case 'pdf-screen': {

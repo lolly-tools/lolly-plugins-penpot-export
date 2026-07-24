@@ -248,3 +248,58 @@ body {
 .footnote a {
   color: inherit;
 }
+
+/* ── brand ink locks ─────────────────────────────────────────────────────── */
+
+.locks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lock {
+  display: grid;
+  grid-template-columns: 14px 62px repeat(4, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+/* The spot field spans the full row beneath its swatch's ink values. */
+.lock-spot {
+  grid-column: 2 / -1;
+}
+
+.lock-chip {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.lock-hex {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lock-ink {
+  min-width: 0; /* number inputs refuse to shrink inside a grid track otherwise */
+  text-align: center;
+}
+
+.scan {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.scan:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}

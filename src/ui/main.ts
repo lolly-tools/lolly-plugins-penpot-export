@@ -8,6 +8,11 @@ import { convert, installFontCss, type OutputFormat } from './convert.ts';
 import { HDR_DIAL_DEFAULTS } from './raster.ts';
 import { UNITS, parseDimension, toUnit, type Unit } from '@engine/units.ts';
 import { isEmbedded, installDemoHost } from './demo.ts';
+import {
+  PRESS_CONDITIONS, DEFAULT_CONDITION, loadInkLocks, saveInkLocks, locksForPalette, isLocked,
+  type ColorMode, type InkLock,
+} from './cmyk.ts';
+import { extractSvgPalette } from './protect.ts';
 
 const app = document.getElementById('app')!;
 
@@ -84,6 +89,7 @@ const FORMATS: FormatDef[] = [
   { id: 'eps', label: 'EPS', hint: 'PostScript for print + legacy tools' },
   { id: 'emf', label: 'EMF', hint: 'Windows metafile — pastes as vectors into Office' },
   { id: 'dxf', label: 'DXF', hint: 'CAD / laser-cutter outlines (paths only)' },
+  { id: 'tiff', label: 'CMYK TIFF', hint: 'Flat DeviceCMYK raster for placement' },
   { id: 'png', label: 'PNG', hint: 'True DPI via pHYs chunk' },
   { id: 'jpeg', label: 'JPEG', hint: 'True DPI, white background' },
   { id: 'webp', label: 'WebP', hint: 'Small web raster' },
@@ -120,6 +126,12 @@ interface FormState {
   registration: boolean;
   colorBars: boolean;
   pdfx: boolean;
+  // colour management (pdf/eps/tiff)
+  colorMode: ColorMode;
+  condition: string;
+  /** Uploaded destination ICC — press profiles can't ship with the plugin. */
+  destProfile: Uint8Array | null;
+  destProfileName: string;
   // content protection
   c2pa: boolean;
   imprint: boolean;
@@ -144,6 +156,10 @@ const form: FormState = {
   registration: false,
   colorBars: false,
   pdfx: false,
+  colorMode: 'rgb',
+  condition: DEFAULT_CONDITION,
+  destProfile: null,
+  destProfileName: '',
   c2pa: true,
   imprint: true,
   creator: '',
@@ -154,6 +170,27 @@ const form: FormState = {
   hdrLift: String(HDR_DIAL_DEFAULTS.lift),
   hdrFocus: String(HDR_DIAL_DEFAULTS.richness),
 };
+
+/**
+ * Ink locks persist across sessions (a brand's measured values don't change),
+ * while the board's colour list is scanned on demand — extracting it needs the
+ * board's SVG, which is a round-trip to Penpot we shouldn't spend on every
+ * selection change.
+ */
+let inkLocks: InkLock[] = loadInkLocks();
+let boardColors: string[] = [];
+let scanning = false;
+
+/** Merge an edited row back into the persisted set, keyed by hex. */
+function updateLock(hex: string, patch: Partial<InkLock>): void {
+  const i = inkLocks.findIndex((l) => (l.hex ?? '').toLowerCase() === hex.toLowerCase());
+  const merged: InkLock = { ...(i >= 0 ? inkLocks[i] : { hex }), ...patch, hex };
+  if (i >= 0) inkLocks[i] = merged;
+  else inkLocks.push(merged);
+  // Drop rows the user has cleared, so the store doesn't fill with empty hexes.
+  inkLocks = inkLocks.filter(isLocked);
+  saveInkLocks(inkLocks);
+}
 
 let statusText = '';
 let statusKind: 'idle' | 'busy' | 'error' | 'ok' = 'idle';
@@ -292,6 +329,116 @@ function render(): void {
     app.append(el('label', { class: 'section' }, 'Print marks'), checks);
   }
 
+  // colour management — the formats that can carry ink
+  if (form.format === 'pdf' || form.format === 'eps' || form.format === 'tiff') {
+    // CMYK TIFF is CMYK by definition; the others are a choice.
+    const forcedCmyk = form.format === 'tiff';
+    if (forcedCmyk) form.colorMode = 'cmyk';
+
+    app.append(el('label', { class: 'section' }, 'Colour'));
+    if (!forcedCmyk) {
+      const modes = el('div', { class: 'formats' });
+      for (const [id, label] of [['rgb', 'RGB'], ['cmyk', 'CMYK'] as const] as [ColorMode, string][]) {
+        const btn = el('button', { class: `fmt${form.colorMode === id ? ' active' : ''}`, type: 'button' }, label);
+        btn.addEventListener('click', () => {
+          form.colorMode = id;
+          render();
+        });
+        modes.append(btn);
+      }
+      app.append(modes);
+    }
+
+    if (form.colorMode === 'cmyk') {
+      const condSel = el('select') as HTMLSelectElement;
+      for (const c of PRESS_CONDITIONS) {
+        condSel.append(el('option', c.id === form.condition ? { value: c.id, selected: '' } : { value: c.id }, c.label));
+      }
+      condSel.addEventListener('change', () => {
+        form.condition = condSel.value;
+        render();
+      });
+      app.append(el('label', { class: 'section' }, 'Press condition'), el('div', { class: 'row' }, condSel));
+
+      // The honest caveat, stated where the decision is made rather than buried
+      // in a README: unlocked colours are converted, not colour-managed.
+      app.append(
+        el('p', { class: 'hint' },
+          'Colours are converted to device CMYK — the press condition is declared for the RIP, not applied. ' +
+          'Lock your brand inks below to get exact values.'),
+      );
+
+      if (form.format === 'pdf') {
+        const iccIn = el('input', { type: 'file', accept: '.icc,.icm' }) as HTMLInputElement;
+        iccIn.addEventListener('change', () => {
+          const file = iccIn.files?.[0];
+          if (!file) return;
+          void file.arrayBuffer().then((buf) => {
+            form.destProfile = new Uint8Array(buf);
+            form.destProfileName = file.name;
+            render();
+          });
+        });
+        app.append(
+          el('label', { class: 'section' }, 'Destination profile'),
+          el('div', { class: 'row stack' }, iccIn),
+          el('p', { class: 'hint' },
+            form.destProfileName
+              ? `Embedding ${form.destProfileName} — PDF/X-4 can be claimed.`
+              : 'Optional. PDF/X-4 requires an embedded destination profile; without one the export stays valid but drops the conformance claim. Your printer can supply the .icc for their press.'),
+        );
+      }
+
+      // ── ink locks ────────────────────────────────────────────────────────
+      const rows = boardColors.length ? locksForPalette(boardColors, inkLocks) : inkLocks;
+      const locksBox = el('div', { class: 'locks' });
+      for (const lock of rows) {
+        const hex = lock.hex!;
+        const row = el('div', { class: 'lock' });
+        row.append(el('span', { class: 'lock-chip', style: `background:${hex}` }));
+        row.append(el('span', { class: 'lock-hex' }, hex));
+        const vals = lock.cmyk?.length === 4 ? lock.cmyk : [null, null, null, null];
+        (['C', 'M', 'Y', 'K'] as const).forEach((plate, i) => {
+          const input = el('input', {
+            class: 'lock-ink', type: 'number', min: '0', max: '100', step: 'any',
+            placeholder: plate, ...(vals[i] != null ? { value: String(vals[i]) } : {}),
+          }) as HTMLInputElement;
+          input.addEventListener('input', () => {
+            const next = [...(row.querySelectorAll('.lock-ink') as NodeListOf<HTMLInputElement>)]
+              .map((el2) => Number(el2.value));
+            // A partially-filled row isn't a lock — all four plates or nothing.
+            const complete = next.every((v) => Number.isFinite(v) && v >= 0 && v <= 100)
+              && [...(row.querySelectorAll('.lock-ink') as NodeListOf<HTMLInputElement>)].every((e) => e.value !== '');
+            updateLock(hex, { cmyk: complete ? next : undefined });
+          });
+          row.append(input);
+        });
+        const spotIn = el('input', {
+          class: 'lock-spot', type: 'text', placeholder: 'Spot name (optional)',
+          ...(lock.spot?.name ? { value: lock.spot.name } : {}),
+        }) as HTMLInputElement;
+        spotIn.addEventListener('input', () => {
+          const name = spotIn.value.trim();
+          updateLock(hex, { spot: name ? { name } : null });
+        });
+        row.append(spotIn);
+        locksBox.append(row);
+      }
+      if (!rows.length) {
+        locksBox.append(el('p', { class: 'empty' }, 'No ink locks yet — scan the board to list its colours.'));
+      }
+
+      const scanBtn = el('button', { class: 'scan', type: 'button', ...(scanning || busy ? { disabled: '' } : {}) },
+        scanning ? 'Scanning…' : 'Scan board colours');
+      scanBtn.addEventListener('click', () => void scanColors());
+      app.append(el('label', { class: 'section' }, 'Brand ink locks'), locksBox, scanBtn);
+      app.append(
+        el('p', { class: 'hint' },
+          'Enter the CMYK your printer specified (0–100, all four). A spot name emits a true /Separation plate in PDF. Locks are saved on this machine.'),
+      );
+    }
+  }
+
   // HDR (png/jpeg only — WebP has no viable HDR decode path)
   if (form.format === 'png' || form.format === 'jpeg') {
     const hdrBox = el('div', { class: 'checks' });
@@ -349,6 +496,30 @@ function render(): void {
   );
 }
 
+/**
+ * Pull the board's SVG once and list the colours it actually uses, so ink locks
+ * can be entered against real swatches instead of typed hexes.
+ */
+async function scanColors(): Promise<void> {
+  const t = currentTarget();
+  if (!t || scanning || busy) return;
+  scanning = true;
+  setStatus('Reading board colours…', 'busy');
+  try {
+    const data = await requestSvg(t.id);
+    boardColors = extractSvgPalette(new TextDecoder().decode(data.bytes), 24);
+    setStatus(
+      boardColors.length ? `Found ${boardColors.length} colour(s).` : 'No flat colours found on this board.',
+      boardColors.length ? 'ok' : 'error',
+    );
+  } catch (e) {
+    setStatus((e as Error).message || String(e), 'error');
+  } finally {
+    scanning = false;
+    render();
+  }
+}
+
 async function doExport(): Promise<void> {
   const t = currentTarget();
   if (!t || busy) return;
@@ -376,6 +547,12 @@ async function doExport(): Promise<void> {
           bleed: form.registration,
         },
         pdfx: form.pdfx,
+      },
+      color: {
+        mode: form.colorMode,
+        condition: form.condition,
+        inkLocks,
+        destProfile: form.destProfile,
       },
       protect: {
         c2pa: form.c2pa,
