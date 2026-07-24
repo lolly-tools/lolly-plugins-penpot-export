@@ -139,7 +139,10 @@ body {
   font: inherit;
 }
 
-.row select {
+/* Only the unit picker is a fixed narrow control. Every other select in a row
+   inherits the flex:1 above, so long option labels — press conditions like
+   "Coated FOGRA39 (ISO 12647-2:2004)" — stay readable. */
+.row select.unit {
   flex: 0 0 auto;
   width: 64px;
 }

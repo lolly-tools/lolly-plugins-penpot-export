@@ -303,7 +303,7 @@ function render(): void {
       wIn.value = form.width;
     }
   });
-  const unitSel = el('select') as HTMLSelectElement;
+  const unitSel = el('select', { class: 'unit' }) as HTMLSelectElement;
   for (const u of UNITS) unitSel.append(el('option', u === form.unit ? { value: u, selected: '' } : { value: u }, u));
   unitSel.addEventListener('change', () => {
     form.unit = unitSel.value as Unit;
