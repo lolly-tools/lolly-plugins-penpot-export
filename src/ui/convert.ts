@@ -101,12 +101,22 @@ export interface ConvertResult {
 
 const textApi = createTextAPI();
 
+/** Warnings raised by the shared bridge code during the current conversion.
+ *
+ *  The IR walk reports things the reader genuinely needs to know — a filter it could
+ *  not turn into a shadow, a font it could not outline — through `host.log`, and
+ *  those used to go only to the browser console, which nobody has open. They are
+ *  collected here and folded into the per-export warning line the UI already shows. */
+let collected: string[] = [];
+
 /** Minimal host: svg-ir only reaches for host.text and host.log. The contract's
  *  log is a FUNCTION (level, msg, ctx), not a console-like object. */
 const host = {
   text: textApi,
   log: (level: 'debug' | 'info' | 'warn' | 'error', msg: string, ctx?: object) => {
     (console[level] ?? console.log)('[lolly-export]', msg, ctx ?? '');
+    // Only warn/error: `info` is per-node bookkeeping and would bury the real thing.
+    if (level === 'warn' || level === 'error') collected.push(msg);
   },
 } as unknown as HostV1;
 
@@ -202,6 +212,7 @@ function mountSvg(svgText: string): { svg: SVGSVGElement; dispose: () => void } 
 
 export async function svgToIr(svgText: string, label: string): Promise<{ ir: VectorIr; warnings: string[] }> {
   const warnings: string[] = [];
+  collected = [];
   const { svg, dispose } = mountSvg(svgText);
   try {
     const walk = (root: SVGSVGElement) =>
@@ -225,6 +236,17 @@ export async function svgToIr(svgText: string, label: string): Promise<{ ir: Vec
     }
   } finally {
     dispose();
+    // In a `finally` so both return paths get them, and safe there because the
+    // returned object holds a REFERENCE to this array — the pushes land before the
+    // caller sees it.
+    //
+    // Deduped: one unconvertible filter referenced by twenty shapes is one problem,
+    // and twenty copies of the same sentence is not a status line.
+    for (const m of new Set(collected)) {
+      const sentence = /[.!]$/.test(m) ? m : `${m}.`;
+      warnings.push(sentence.charAt(0).toUpperCase() + sentence.slice(1));
+    }
+    collected = [];
   }
 }
 

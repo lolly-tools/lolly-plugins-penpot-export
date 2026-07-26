@@ -160,6 +160,14 @@ One-time repo setting: **Settings → Pages → Source: GitHub Actions.**
 - **Penpot SVG fidelity is the ceiling.** Whatever `shape.export({type:'svg'})`
   emits is what we convert. Gradients/blends/masks that the IR walk can't
   express fall back to rasterised patches (by design); test on real boards.
+- **Drop shadows convert to vector.** PDF, EPS, EMF and DXF have no blur
+  primitive, so a shadow used to vanish from them entirely. It is now redrawn as
+  a ramp of concentric bands at computed alphas — the blur of an edge is exactly
+  the Gaussian CDF, so this is arithmetic rather than an eyeballed fake. Both
+  spellings Penpot and other tools emit are recognised (`feDropShadow`, and the
+  `feFlood`/`feOffset`/`feGaussianBlur` chain). A filter that is *not* a drop
+  shadow — a blur, a colour matrix, a turbulence — is still left out rather than
+  approximated into something the source never had, and the status line says so.
 - **Fonts + CORS.** SVG/raster exports inline Penpot's fonts as data: URIs
   (CORS-permitting) so text renders correctly. The IR formats (PDF/EPS/EMF/DXF)
   try to outline text via HarfBuzz + @font-face discovery; when the font can't
