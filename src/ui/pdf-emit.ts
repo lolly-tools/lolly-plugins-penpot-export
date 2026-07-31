@@ -448,10 +448,15 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
     destRef = ` /DestOutputProfile ${iccId} 0 R`;
   }
   const intentId = w.beginObj();
+  // A null registry means the intent names no registry at all (a Custom
+  // condition describing the operator's own device), so the key is OMITTED
+  // rather than written empty — stringifying it put the literal text "null" in
+  // the PDF as the registry a reader should consult.
+  const registry = intent.registry ? ` /RegistryName (${esc(intent.registry)})` : '';
   w.push(
     `<< /Type /OutputIntent /S /${intent.subtype} ` +
       `/OutputConditionIdentifier (${esc(intent.identifier)}) ` +
-      `/Info (${esc(intent.info)}) /RegistryName (${esc(intent.registry)})${destRef} >>`,
+      `/Info (${esc(intent.info)})${registry}${destRef} >>`,
   );
   w.endObj();
   const intentRef = ` /OutputIntents [${intentId} 0 R]`;

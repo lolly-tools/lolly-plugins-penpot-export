@@ -13,3 +13,7 @@ export { rgbToCmyk } from '@engine/color.ts';
 export { splitCssArgs, parseGradientStop, parseGradientAngle, parseRadialGradient } from '@engine/css-paint.ts';
 // …and the css-box helpers its sibling export-css.ts reaches for in turn.
 export { roundedRectPath, parseCssLength, cornerRadii, uniformRadius } from '@engine/css-box.ts';
+// The one colour parser the bridge asks for by name. It arrived with the
+// engine's colour-space work and is what export-css.ts / export-pdf-vector.ts /
+// svg-ir.ts now use to turn any CSS colour into 8-bit sRGB + alpha.
+export { parseColorToSrgb8 } from '@engine/css-color.ts';
