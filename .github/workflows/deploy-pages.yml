@@ -38,14 +38,11 @@ jobs:
       # node_modules, so lolly is never npm-installed here. Only the
       # shells/web submodule is initialised — a recursive init would drag in
       # every subrepo and break on any parent-pointer drift.
+      # community/ and shells/ are plain directories since the 2026-09-11 fold; no submodule step.
       - uses: actions/checkout@v4
         with:
           repository: lolly-tools/lolly
           path: lolly
-
-      - name: Init shells/web submodule
-        working-directory: lolly
-        run: git submodule update --init shells/web
 
       - uses: actions/setup-node@v4
         with:
