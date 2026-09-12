@@ -10,6 +10,14 @@ export { parseSvgPath } from '@engine/svg-path.ts';
 export { crc32 } from '@engine/zip-crypto.ts';
 // export-pdf-vector.ts — the brand CMYK / spot-colour palette machinery.
 export { rgbToCmyk } from '@engine/color.ts';
+// The rest of that machinery, which export-pdf-vector.ts started importing from
+// the engine index when the PDF writer moved to pdf-lib (2026-09-11): the
+// hex → CMYK/spot lookup it builds once per export, its cache key, and the
+// all-black plate a finish mask prints on. Types (BrandPaletteEntry,
+// PaletteHit, PaletteSpotHit) need no entry here: tsconfig.json points
+// `@lolly/engine` at the real engine index, so only runtime symbols pass
+// through this shim.
+export { FINISH_MASK_CMYK, buildCmykPaletteMap, cmykKey } from '@engine/cmyk-palette.ts';
 export { splitCssArgs, parseGradientStop, parseGradientAngle, parseRadialGradient } from '@engine/css-paint.ts';
 // …and the css-box helpers its sibling export-css.ts reaches for in turn.
 export { roundedRectPath, parseCssLength, cornerRadii, uniformRadius } from '@engine/css-box.ts';

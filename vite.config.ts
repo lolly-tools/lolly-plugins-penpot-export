@@ -21,6 +21,11 @@ export default defineConfig({
       '@lolly/engine': resolve(HERE, 'src/engine-shim.ts'),
       '@engine': resolve(LOLLY, 'engine/src'),
       '@bridge': resolve(LOLLY, 'shells/web/src/bridge'),
+      // The bridge keeps its DOM-free halves in the workspace package
+      // @lolly-tools/node-shell (svg-ir, pptx, net, …), whose exports map is
+      // "./x" -> "./src/x.ts". It is source in the same checkout, never an
+      // installed package, so mirror the map with a folder alias.
+      '@lolly-tools/node-shell': resolve(LOLLY, 'packages/node-shell/src'),
       // The bridge modules live inside the lolly tree, so their bare imports
       // would resolve against lolly's node_modules — which CI doesn't install.
       // Pin both runtime deps to THIS repo's node_modules instead.
