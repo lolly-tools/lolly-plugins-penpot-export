@@ -301,13 +301,16 @@ function continueBrandPairs(geo: PrintGeometry, palette: PaletteSwatch[], regist
   if (!rest.length || !bars.length) return;
   const { barCellPt: bc, barPairGapPt: bg, regCrossPt: rc, markReachPt: reach } = PRINT_MARK_DEFAULTS;
   const y = bars[0]!.y;
+  // Match the corner radius the engine gave the bars it laid out (0 unless the
+  // caller passed barRadiusPt) so the continued cells look identical.
+  const r = bars[0]!.r ?? 0;
   const lastEnd = Math.max(...bars.map((b) => b.x + b.w));
   let x = registration ? Math.max(lastEnd + bg, pageW / 2 + rc + 6) : lastEnd + bg;
   const maxX = pageW - reach;
   for (const { rgb, cmyk, label, spotName } of rest) {
     if (x + 2 * bc > maxX) break;
-    bars.push({ x, y, w: bc, h: bc, cmyk, rgb, ink: 'rgb', label, spotName, mark: 'colorbar' });
-    bars.push({ x: x + bc, y, w: bc, h: bc, cmyk, rgb, ink: 'cmyk', label, spotName, mark: 'colorbar' });
+    bars.push({ x, y, w: bc, h: bc, cmyk, rgb, ink: 'rgb', label, spotName, r, mark: 'colorbar' });
+    bars.push({ x: x + bc, y, w: bc, h: bc, cmyk, rgb, ink: 'cmyk', label, spotName, r, mark: 'colorbar' });
     x += 2 * bc + bg;
   }
 }
