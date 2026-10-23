@@ -218,6 +218,7 @@ export async function svgToIr(svgText: string, label: string): Promise<{ ir: Vec
     const walk = (root: SVGSVGElement) =>
       svgDomToIr(root, {
         host,
+        textMode: 'outline',
         getComputedStyle: (el: Element) => window.getComputedStyle(el),
         label,
       });

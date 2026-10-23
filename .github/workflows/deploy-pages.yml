@@ -13,15 +13,16 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -50,7 +51,7 @@ jobs:
 
       - name: Install plugin deps
         working-directory: lolly-plugins-penpot-export
-        run: npm install
+        run: npm ci
 
       # No typecheck here: tsc follows type-only imports into the web shell's
       # export.ts, whose type graph needs lolly's full node_modules. Typecheck
@@ -59,12 +60,24 @@ jobs:
         working-directory: lolly-plugins-penpot-export
         run: LOLLY_DIR="$GITHUB_WORKSPACE/lolly" npm run build
 
+      - name: Emitter checks
+        working-directory: lolly-plugins-penpot-export
+        run: npm run smoke
+
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         with:
           path: lolly-plugins-penpot-export/dist
 
   deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      pages: write
+      id-token: write
     needs: build
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment:
       name: github-pages

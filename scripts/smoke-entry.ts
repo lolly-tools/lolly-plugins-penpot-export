@@ -8,6 +8,8 @@ import { emitDxf } from '@engine/dxf.ts';
 import { emitEmf } from '@engine/emf.ts';
 import type { VectorIr } from '@engine/emf.ts';
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { rejects, throws } from 'node:assert/strict';
+import { join } from 'node:path';
 
 const ir: VectorIr = {
   width: 400,
@@ -45,7 +47,8 @@ const assert = (cond: boolean, what: string): void => {
   console.log(`ok: ${what}`);
 };
 
-mkdirSync('dist/smoke', { recursive: true });
+const outputDir = 'node_modules/.cache/smoke-output';
+mkdirSync(outputDir, { recursive: true });
 
 const pdf = await emitPrintPdf(ir, {
   width: 105, height: 74, unit: 'mm', bleed: '3mm',
@@ -72,26 +75,36 @@ entries.forEach((line, i) => {
   const off = Number(line.slice(0, 10));
   assert(pdfStr.slice(off).startsWith(`${i + 1} 0 obj`), `xref entry ${i + 1} offset`);
 });
-writeFileSync('dist/smoke/smoke.pdf', pdf);
+writeFileSync(join(outputDir, 'smoke.pdf'), pdf);
 
 const irNoImages: VectorIr = { ...ir, prims: ir.prims.filter((p) => p.type === 'path') };
 const svg = irToSvg(irNoImages, { width: 105, height: 74, unit: 'mm' });
 assert(svg.includes('viewBox="0 0 400 300"'), 'SVG viewBox');
 assert(svg.includes('width="105mm"'), 'SVG physical width');
 assert(svg.includes('<path d="M40 40'), 'SVG path data');
-writeFileSync('dist/smoke/smoke.svg', svg);
+writeFileSync(join(outputDir, 'smoke.svg'), svg);
 
 const eps = emitEps(ir, { width: 105, height: 74, unit: 'mm' });
 assert(eps.startsWith('%!PS-Adobe-3.0 EPSF-3.0'), 'EPS header');
-writeFileSync('dist/smoke/smoke.eps', eps);
+writeFileSync(join(outputDir, 'smoke.eps'), eps);
 
 const dxf = emitDxf(ir, {});
 assert(dxf.text.includes('ENTITIES'), 'DXF entities');
 assert(dxf.droppedImages === 1, 'DXF reports dropped image');
-writeFileSync('dist/smoke/smoke.dxf', dxf.text);
+writeFileSync(join(outputDir, 'smoke.dxf'), dxf.text);
 
 const emf = emitEmf(ir, {});
 assert(emf[0] === 0x01 && emf[1] === 0x00, 'EMF header record');
-writeFileSync('dist/smoke/smoke.emf', Buffer.from(emf));
+writeFileSync(join(outputDir, 'smoke.emf'), Buffer.from(emf));
 
-console.log('\nAll emitter smoke tests passed. Outputs in dist/smoke/.');
+// A new IR variant must never become a malformed image or disappear silently.
+const liveText: VectorIr = { width: 400, height: 300, prims: [{
+  type: 'text', x: 10, y: 20, text: 'Keep this text', fontFamily: 'sans-serif',
+  fontSize: 16, weight: 400, italic: false, fill: { r: 0, g: 0, b: 0 },
+  align: 'left', baseline: 'alphabetic',
+}] };
+await rejects(() => emitPrintPdf(liveText), /outlined text/);
+throws(() => irToSvg(liveText), /outlined text/);
+console.log('ok: live text is refused by outline-only emitters');
+
+console.log(`\nAll emitter smoke tests passed. Outputs in ${outputDir}/.`);

@@ -16,11 +16,12 @@ export default defineConfig({
   resolve: {
     alias: {
       // The web-shell bridge modules import `@lolly/engine` (the full engine
-      // index, which drags in handlebars/ajv). They only use two symbols, so
-      // point the specifier at a thin shim that deep-imports just those.
+      // index). Use a narrow shim of the text, colour and PDF exports these
+      // bridges need instead of bundling the whole engine barrel.
       '@lolly/engine': resolve(HERE, 'src/engine-shim.ts'),
       '@engine': resolve(LOLLY, 'engine/src'),
       '@bridge': resolve(LOLLY, 'shells/web/src/bridge'),
+      '@lolly-tools/core': resolve(LOLLY, 'packages/core/src'),
       // The bridge keeps its DOM-free halves in the workspace package
       // @lolly-tools/node-shell (svg-ir, pptx, net, …), whose exports map is
       // "./x" -> "./src/x.ts". It is source in the same checkout, never an
@@ -28,7 +29,7 @@ export default defineConfig({
       '@lolly-tools/node-shell': resolve(LOLLY, 'packages/node-shell/src'),
       // The bridge modules live inside the lolly tree, so their bare imports
       // would resolve against lolly's node_modules — which CI doesn't install.
-      // Pin both runtime deps to THIS repo's node_modules instead.
+      // Pin runtime dependencies to THIS repo's node_modules instead.
       idb: resolve(HERE, 'node_modules/idb'),
       harfbuzzjs: resolve(HERE, 'node_modules/harfbuzzjs'),
       // Dynamic import in font-registry.ts (woff2 → sfnt for uploaded fonts).
@@ -36,6 +37,12 @@ export default defineConfig({
       // aliasing bypasses — point straight at the built files.
       'woff2-encoder/decompress': resolve(HERE, 'node_modules/woff2-encoder/dist/decompress.js'),
       'woff2-encoder': resolve(HERE, 'node_modules/woff2-encoder/dist/index.js'),
+      'ajv/dist/2020.js': resolve(HERE, 'node_modules/ajv/dist/2020.js'),
+      ajv: resolve(HERE, 'node_modules/ajv/dist/ajv.js'),
+      fflate: resolve(HERE, 'node_modules/fflate/esm/browser.js'),
+      'pdf-lib': resolve(HERE, 'node_modules/pdf-lib/es/index.js'),
+      '@cto.af/linebreak': resolve(HERE, 'node_modules/@cto.af/linebreak/lib/index.js'),
+      'bidi-shaper': resolve(HERE, 'node_modules/bidi-shaper/dist/index.js'),
     },
   },
   server: {

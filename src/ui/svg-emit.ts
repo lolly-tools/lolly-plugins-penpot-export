@@ -72,6 +72,7 @@ export function irToSvg(ir: VectorIr, opts: VectorEmitOpts = {}): string {
       );
       continue;
     }
+    if (prim.type !== 'path') throw new Error('SVG export needs outlined text.');
     const attrs: string[] = [`d="${pathD(prim)}"`];
     attrs.push(prim.fill ? `fill="${hex(prim.fill)}"` : 'fill="none"');
     if (prim.fillRule === 'evenodd') attrs.push('fill-rule="evenodd"');
