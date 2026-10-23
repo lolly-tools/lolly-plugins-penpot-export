@@ -25,3 +25,14 @@ export { roundedRectPath, parseCssLength, cornerRadii, uniformRadius } from '@en
 // engine's colour-space work and is what export-css.ts / export-pdf-vector.ts /
 // svg-ir.ts now use to turn any CSS colour into 8-bit sRGB + alpha.
 export { parseColorToSrgb8 } from '@engine/css-color.ts';
+
+// Shared text and PDF bridges now use these parts of the engine as well.
+export { composeText } from '@engine/text-layout.ts';
+export { parseTextDocument } from '@engine/text-story-document.ts';
+export { TextSourceError, textBoundaries } from '@engine/text-source.ts';
+export { sfntKind, woffToSfnt } from '@engine/font-convert.ts';
+export { parseDimension, toPoints } from '@engine/units.ts';
+export { computePrintGeometry } from '@engine/print-marks.ts';
+export { buildEncryptDictValues, preparePassword, encryptObjectBytes } from '@engine/pdf-crypto-r6.ts';
+export { toolCredit } from '@engine/metadata.ts';
+export { buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION } from '@engine/pdfx.ts';

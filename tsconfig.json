@@ -10,9 +10,13 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "types": ["@penpot/plugin-types"],
+    "types": ["@penpot/plugin-types", "vite/client"],
+    "noUncheckedIndexedAccess": true,
     "paths": {
       "@lolly/engine": ["../lolly/engine/src/index.ts"],
+      "@lolly-tools/core": ["../lolly/packages/core/src/index.ts"],
+      "@lolly-tools/core/*": ["../lolly/packages/core/src/*"],
+      "ajv": ["./node_modules/ajv/dist/ajv.d.ts"],
       "@engine/*": ["../lolly/engine/src/*"],
       "@bridge/*": ["../lolly/shells/web/src/bridge/*"]
     }

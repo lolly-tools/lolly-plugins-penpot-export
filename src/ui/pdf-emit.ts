@@ -372,13 +372,15 @@ export async function emitPrintPdf(ir: VectorIr, opts: PrintPdfOpts = {}): Promi
     for (const prim of ir.prims) {
       if (prim.type === 'path') {
         content += pathOps(prim, fit, flip, sep);
-      } else {
+      } else if (prim.type === 'image') {
         const x = fit.ox + prim.x * fit.s;
         const yTop = fit.oy + prim.y * fit.s;
         const dw = prim.w * fit.s;
         const dh = prim.h * fit.s;
         content += `q ${n(dw)} 0 0 ${n(dh)} ${n(x)} ${n(flip(yTop + dh))} cm /Im${imgN} Do Q\n`;
         imgN++;
+      } else {
+        throw new Error('PDF export needs outlined text.');
       }
     }
     continueBrandPairs(geo, opts.palette ?? [], Boolean(marks.registration), pageW);

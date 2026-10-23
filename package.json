@@ -7,13 +7,19 @@
   "license": "MPL-2.0",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && esbuild src/plugin.ts --bundle --format=iife --outfile=dist/plugin.js",
+    "build": "vite build && esbuild src/plugin.ts --bundle --format=iife --outfile=dist/plugin.js && node scripts/build-info.mjs",
     "preview": "npm run build && vite preview --port 4402",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "@cto.af/linebreak": "4.0.3",
+    "ajv": "8.17.1",
+    "bidi-shaper": "0.1.2",
+    "fflate": "0.8.3",
     "harfbuzzjs": "^1.4.0",
     "idb": "^8.0.0",
+    "pdf-lib": "1.17.1",
     "woff2-encoder": "^2.0.0"
   },
   "devDependencies": {
