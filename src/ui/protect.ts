@@ -15,6 +15,7 @@
 import { embedC2pa, exportActionSteps } from '@engine/c2pa.ts';
 import type { ExportMeta } from '@engine/bridge/host-v1.ts';
 import { insertPngMeta, insertJpegExif, injectSvgMeta } from '@bridge/export-image-meta.ts';
+import { version } from '../../package.json';
 
 export interface ProtectOpts {
   /** Embed C2PA Content Credentials (default on, like the Lolly shell). */
@@ -80,7 +81,7 @@ export async function applyProtection(
       out = await embedC2pa(out, fmt, {
         title: opts.title || 'Penpot board',
         claimGenerator: 'Lolly-Export-for-Penpot lolly.tools',
-        generatorInfo: { name: 'Lolly Export for Penpot', version: '0.1.0' },
+        generatorInfo: { name: 'Lolly Export for Penpot', version },
         environment: { host: 'penpot-plugin' },
         ...(opts.creator ? { author: { name: opts.creator } } : {}),
         ...(opts.copyright ? { rights: opts.copyright } : {}),
