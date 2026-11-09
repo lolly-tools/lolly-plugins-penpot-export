@@ -41,6 +41,8 @@ export default defineConfig({
       ajv: resolve(HERE, 'node_modules/ajv/dist/ajv.js'),
       fflate: resolve(HERE, 'node_modules/fflate/esm/browser.js'),
       'pdf-lib': resolve(HERE, 'node_modules/pdf-lib/es/index.js'),
+      // The shared export bridge's DOM capture (export-shared.ts) imports this lazily.
+      'dom-to-image-more': resolve(HERE, 'node_modules/dom-to-image-more/dist/dom-to-image-more.min.js'),
       '@cto.af/linebreak': resolve(HERE, 'node_modules/@cto.af/linebreak/lib/index.js'),
       'bidi-shaper': resolve(HERE, 'node_modules/bidi-shaper/dist/index.js'),
     },
