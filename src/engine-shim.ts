@@ -36,3 +36,9 @@ export { computePrintGeometry } from '@engine/print-marks.ts';
 export { buildEncryptDictValues, preparePassword, encryptObjectBytes } from '@engine/pdf-crypto-r6.ts';
 export { toolCredit } from '@engine/metadata.ts';
 export { buildPdfXXmp, formatPdfDate, makeDocumentId, pdfxOutputIntentSpec, PDFX_VERSION } from '@engine/pdfx.ts';
+
+// The shared export bridge (export-shared.ts, export-svg-credentials.ts) reads
+// physical units, the pixel watermark and gzip from the engine as well.
+export { isPhysical, CSS_DPI } from '@engine/units.ts';
+export { embedWatermark } from '@engine/pixel-watermark.ts';
+export { gunzip, gzip } from '@engine/gzip.ts';

@@ -16,6 +16,7 @@
     "@cto.af/linebreak": "4.0.3",
     "ajv": "8.17.1",
     "bidi-shaper": "0.1.2",
+    "dom-to-image-more": "3.11.0",
     "fflate": "0.8.3",
     "harfbuzzjs": "^1.4.0",
     "idb": "^8.0.0",
